@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tabitha Tracker Map</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #fdf6e3;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+    }
+    .card {
+      background: #fff;
+      border: 2px solid #ccc;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 20px auto;
+      max-width: 400px;
+      text-align: left;
+    }
+    #map {
+      height: 400px;
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto 20px;
+      border-radius: 10px;
+      border: 2px solid #999;
+    }
+    input, button, select {
+      margin: 5px;
+      padding: 5px;
+      font-size: 14px;
+    }
+    #zoneList {
+      margin-top: 10px;
+      max-height: 120px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 5px;
+      border-radius: 5px;
+      background: #fafafa;
+    }
+    .zoneItem {
+      margin: 3px 0;
+      padding: 3px 6px;
+      border-radius: 4px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .zoneColorBox {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      margin-right: 8px;
+      border: 1px solid #888;
+      flex-shrink: 0;
+    }
+    .removeZoneBtn {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🐾 Tabitha’s Live Tracker Map</h1>
+
+  <!-- Tabitha Info -->
+  <div class="card">
+    <h2>🐱 Tabitha's Profile</h2>
+    <p><strong>Name:</strong> Tabitha</p>
+    <p><strong>Breed:</strong> Domestic Short Hair</p>
+    <p><strong>Birthday:</strong> 01 May 2021</p>
+    <p><strong>Microchip:</strong> 953010005063057</p>
+    <p><strong>Estimated Weight:</strong> ~3 kg</p>
+  </div>
+
+  <!-- Google Map -->
+  <div id="map"></div>
+
+  <!-- Zones Controls -->
+  <div class="card">
+    <h2>🏠 Manage Zones</h2>
+    <input type="text" id="zoneAddress" placeholder="Enter address for zone" size="30">
+    <input type="color" id="zoneColor" value="#FF0000" title="Choose zone color">
+    <button onclick="addZone()">Add Zone</button>
+    <button onclick="clearAllZones()">Clear All Zones</button>
+    <div id="zoneList"></div>
+  </div>
+
+  <script>
+    let map;
+    let tabithaMarker;
+    const homeLat = 52.6964; // Clifton Campville lat
+    const homeLng = -1.6255; // Clifton Campville lng
+    const zones = [];
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: homeLat, lng: homeLng },
+        zoom: 17,
+        mapTypeId: "satellite",
+      });
+
+      tabithaMarker = new google.maps.Marker({
+        position: { lat: homeLat, lng: homeLng },
+        map: map,
+        title: "Tabitha 🐱",
+        icon: {
+          url: "https://cdn-icons-png.flaticon.com/512/12/12638.png", // Paw icon
+          scaledSize: new google.maps.Size(40, 40),
+        },
+      });
+
+      loadZones();
+    }
+
+    function addZone() {
+      const address = document.getElementById("zoneAddress").value.trim();
+      if (!address) {
+        alert("Please enter an address for the zone.");
+        return;
+      }
+      const color = document.getElementById("zoneColor").value;
+
+      // Use Google Maps Geocoder to get polygon (approximate with circle around point)
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address }, function(results, status) {
+        if (status === "OK" && results[0]) {
+          const location = results[0].geometry.location;
+
+          // Create a circular zone with 50 meter radius around address point
+          const circle = new google.maps.Circle({
+            strokeColor: color,
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.35,
+            map: map,
+            center: location,
+            radius: 50, // meters
+          });
+
+          // Store zone info
+          zones.push({ address, color, polygon: circle });
+
+          // Add zone to list UI
+          addZoneToList(address, color);
+
+          // Zoom map to the new zone
+          map.panTo(location);
+          map.setZoom(18);
+
+          saveZones();
+          document.getElementById("zoneAddress").value = "";
+        } else {
+          alert("Geocode was not successful for the following reason: " + status);
+        }
+      });
+    }
+
+    function addZoneToList(address, color) {
+      const zoneList = document.getElementById("zoneList");
+      const zoneDiv = document.createElement("div");
+      zoneDiv.className = "zoneItem";
+      zoneDiv.style.backgroundColor = color;
+
+      const colorBox = document.createElement("div");
+      colorBox.className = "zoneColorBox";
+      colorBox.style.backgroundColor = color;
+
+      const textSpan = document.createElement("span");
+      textSpan.textContent = address;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "removeZoneBtn";
+      removeBtn.innerHTML = "&times;";
+      removeBtn.title = "Remove zone";
+      removeBtn.onclick = () => removeZone(address);
+
+      zoneDiv.appendChild(colorBox);
+      zoneDiv.appendChild(textSpan);
+      zoneDiv.appendChild(removeBtn);
+
+      zoneList.appendChild(zoneDiv);
+    }
+
+    function removeZone(address) {
+      const index = zones.findIndex(z => z.address === address);
+      if (index !== -1) {
+        zones[index].polygon.setMap(null); // remove from map
+        zones.splice(index, 1);
+
+        // Remove from list UI
+        const zoneList = document.getElementById("zoneList");
+        [...zoneList.children].forEach(child => {
+          if (child.textContent.includes(address)) {
+            zoneList.removeChild(child);
+          }
+        });
+
+        saveZones();
+      }
+    }
+
+    function clearAllZones() {
+      zones.forEach(z => z.polygon.setMap(null));
+      zones.length = 0;
+      document.getElementById("zoneList").innerHTML = "";
+      saveZones();
+    }
+
+    // Save zones to localStorage
+    function saveZones() {
+      const zonesToSave = zones.map(zone => ({
+        address: zone.address,
+        color: zone.color,
+        center: {
+          lat: zone.polygon.getCenter().lat(),
+          lng: zone.polygon.getCenter().lng()
+        },
+        radius: zone.polygon.getRadius()
+      }));
+      localStorage.setItem('tabithaZones', JSON.stringify(zonesToSave));
+    }
+
+    // Load zones from localStorage
+    function loadZones() {
+      const savedZones = JSON.parse(localStorage.getItem('tabithaZones'));
+      if (!savedZones) return;
+
+      savedZones.forEach(savedZone => {
+        const circle = new google.maps.Circle({
+          strokeColor: savedZone.color,
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: savedZone.color,
+          fillOpacity: 0.35,
+          map: map,
+          center: savedZone.center,
+          radius: savedZone.radius,
+        });
+
+        zones.push({ address: savedZone.address, color: savedZone.color, polygon: circle });
+        addZoneToList(savedZone.address, savedZone.color);
+      });
+    }
+  </script>
+
+  <!-- Replace YOUR_API_KEY_HERE with your real API key -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCWBUtuBrgSPoFeKIzA-FCaXBIT8HL1tYE&callback=initMap" async defer></script>
+</body>
+</html>
